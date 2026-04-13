@@ -1,0 +1,83 @@
+kind: integration
+partner: opentrade
+name: OpenTrade Yield Vaults
+version: 0.1.0
+repo: w3-io/w3-opentrade-action
+
+description: >
+  Stablecoin yield from US Treasuries, money market funds, and corporate bonds via OpenTrade ERC-4626 vaults. Deposit, redeem, and monitor across Ethereum, Avalanche, and Plume.
+
+
+context: >
+  Use OpenTrade when a workflow needs institutional-grade stablecoin yield. Idle USDC/USDT earns T-bill or MMF returns through regulated, bankruptcy-remote structures. KYC required for deposits.
+
+
+commands:
+  - name: deposit
+    description: Deposit stablecoins into a vault. Auto-approves. Requires KYC.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      amount: { type: string, required: true, description: Amount in underlying base units }
+    outputs:
+      result: { type: object, description: Transaction receipt with from, txHash }
+
+  - name: request-redeem
+    description: Request redemption of vault shares. Async for Dynamic vaults.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      shares: { type: string, required: true, description: Share token amount }
+    outputs:
+      result: { type: object, description: Transaction receipt }
+
+  - name: get-balance
+    description: Get vault share token balance.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      user: { type: string, required: true, description: User address }
+    outputs:
+      result: { type: string, description: Share balance }
+
+  - name: get-asset-balance
+    description: Get underlying stablecoin equivalent of share balance.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      user: { type: string, required: true, description: User address }
+    outputs:
+      result: { type: string, description: Asset balance }
+
+  - name: get-exchange-rate
+    description: Get current share-to-asset exchange rate.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+    outputs:
+      result: { type: string, description: Exchange rate }
+
+  - name: get-vault-info
+    description: Get vault metadata (name, type, state, rates, total assets).
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+    outputs:
+      result:
+        {
+          type: object,
+          description: '{name, symbol, poolType, state, underlyingAsset, exchangeRate, totalAssets}',
+        }
+
+  - name: is-permitted
+    description: Check if an address is KYC-whitelisted for the vault.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      user: { type: string, required: true, description: Address to check }
+    outputs:
+      result: { type: string, description: 'true or false' }
+
+  - name: get-pool-overview
+    description: Get pool health metrics.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+    outputs:
+      result:
+        {
+          type: object,
+          description: '{totalAssets, availableAssets, exchangeRate, pendingWithdrawals}',
+        }

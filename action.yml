@@ -1,0 +1,40 @@
+name: 'W3 OpenTrade Action'
+description: 'OpenTrade stablecoin yield vaults — deposit, redeem, monitor for W3 workflows'
+author: 'w3-io'
+
+inputs:
+  command:
+    description: >
+      Operation to perform. 8 commands: Write: deposit, request-redeem. Read: get-balance, get-asset-balance, get-exchange-rate,
+        get-vault-info, is-permitted, get-pool-overview.
+
+
+    required: true
+  network:
+    description: >
+      Blockchain network (ethereum, avalanche, plume)
+
+
+    required: true
+
+  # ── Vault inputs ─────────────────────────────────────────────
+  vault:
+    description: 'OpenTrade vault contract address'
+    required: false
+  amount:
+    description: 'Amount in underlying asset base units (e.g., 1000000 for 1 USDC)'
+    required: false
+  shares:
+    description: 'Amount in vault share tokens (for request-redeem)'
+    required: false
+  user:
+    description: 'User address for balance/permission queries'
+    required: false
+
+outputs:
+  result:
+    description: 'JSON result of the operation'
+
+runs:
+  using: 'node24'
+  main: 'dist/index.js'
