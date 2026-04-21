@@ -11,7 +11,8 @@ All commands require `command`, `network`, and `vault`.
 | `vault` | address | all | Vault contract address or symbol (XMMF, XTBT, etc.) |
 | `amount` | string | deposit | Amount in underlying asset base units |
 | `shares` | string | request-redeem | Amount in vault share tokens |
-| `user` | address | get-balance, get-asset-balance, is-permitted | User address for queries |
+| `user` | address | get-balance, get-asset-balance, is-permitted, get-account-state, get-max-deposit, get-max-redeem | User address for queries |
+| `event-id` | string | release-withdrawal | Withdrawal event ID from request-redeem |
 
 ## Output
 
@@ -93,6 +94,77 @@ Check if an address is whitelisted (KYC'd) for the vault. Returns true/false.
 #### `get-pool-overview`
 
 Get pool health metrics: total assets, available liquidity, exchange rate, pending withdrawals.
+
+### Withdrawal completion
+
+#### `release-withdrawal`
+
+Release a settled withdrawal from a PoolFlex vault. After `request-redeem` settles (T+0 to T+2), call this to claim the underlying stablecoins.
+
+```yaml
+- uses: w3-io/w3-opentrade-action@v1
+  with:
+    command: release-withdrawal
+    network: avalanche
+    vault: XTBT
+    event-id: '42'
+```
+
+#### `get-active-withdraws`
+
+Get pending async withdrawal requests for a PoolDynamic vault. Returns an array of active withdrawal event IDs.
+
+```yaml
+- uses: w3-io/w3-opentrade-action@v1
+  with:
+    command: get-active-withdraws
+    network: avalanche
+    vault: XMMF
+```
+
+#### `get-account-state`
+
+Get full user position: shares, assets, pending withdrawals. Tries PoolFlex (`getPoolAccountState`) first, falls back to PoolDynamic (`getPoolDynamicAccountState`).
+
+```yaml
+- uses: w3-io/w3-opentrade-action@v1
+  with:
+    command: get-account-state
+    network: avalanche
+    vault: XMMF
+    user: '0xYourWallet...'
+```
+
+### UX helpers
+
+#### `convert-to-shares`
+
+Convert an asset amount to the equivalent vault shares (reverse of `get-asset-balance`).
+
+#### `get-interest-rate`
+
+Get the current yield/interest rate for a vault.
+
+#### `get-max-deposit`
+
+Get the maximum deposit allowed for a user.
+
+#### `get-max-redeem`
+
+Get the maximum redeemable shares for a user.
+
+#### `preview-redeem`
+
+Preview the output of a redemption request before submitting.
+
+```yaml
+- uses: w3-io/w3-opentrade-action@v1
+  with:
+    command: preview-redeem
+    network: avalanche
+    vault: XMMF
+    shares: '1000000'
+```
 
 ## Vault addresses
 

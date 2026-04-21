@@ -206,6 +206,137 @@ describe('getPoolOverview', () => {
   })
 })
 
+// ── Withdrawal completion ───────────────────────────────────
+
+describe('releaseWithdrawal', () => {
+  it('calls releaseWithdrawal on vault', async () => {
+    await client().releaseWithdrawal({ vault: VAULT, eventId: '42' })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].action, 'call-contract')
+    assert.ok(calls[0].params.method.includes('releaseWithdrawal'))
+    assert.equal(calls[0].params.args[0], '42')
+  })
+
+  it('throws without eventId', async () => {
+    await assert.rejects(
+      () => client().releaseWithdrawal({ vault: VAULT }),
+      (err) => err instanceof OpenTradeError && err.code === 'MISSING_INPUT',
+    )
+  })
+})
+
+describe('getActiveWithdraws', () => {
+  it('reads getActiveWithdraws', async () => {
+    const c = client()
+    mockResults.push({ result: [] })
+    await c.getActiveWithdraws({ vault: VAULT })
+    assert.equal(calls[0].action, 'read-contract')
+    assert.ok(calls[0].params.method.includes('getActiveWithdraws'))
+  })
+})
+
+describe('getAccountState', () => {
+  it('reads account state (PoolFlex path)', async () => {
+    const c = client()
+    mockResults.push({ result: { shares: '100' } })
+    await c.getAccountState({ vault: VAULT, user: USER })
+    assert.equal(calls[0].action, 'read-contract')
+    assert.ok(calls[0].params.method.includes('getPoolAccountState'))
+    assert.equal(calls[0].params.args[0], USER)
+  })
+
+  it('throws without user', async () => {
+    await assert.rejects(
+      () => client().getAccountState({ vault: VAULT }),
+      (err) => err instanceof OpenTradeError && err.code === 'MISSING_INPUT',
+    )
+  })
+})
+
+// ── UX read operations ──────────────────────────────────────
+
+describe('convertToShares', () => {
+  it('reads convertToShares', async () => {
+    const c = client()
+    mockResults.push({ result: '950000' })
+    await c.convertToShares({ vault: VAULT, amount: '1000000' })
+    assert.equal(calls[0].action, 'read-contract')
+    assert.ok(calls[0].params.method.includes('convertToShares'))
+    assert.equal(calls[0].params.args[0], '1000000')
+  })
+
+  it('throws without amount', async () => {
+    await assert.rejects(
+      () => client().convertToShares({ vault: VAULT }),
+      (err) => err instanceof OpenTradeError && err.code === 'MISSING_INPUT',
+    )
+  })
+})
+
+describe('getInterestRate', () => {
+  it('reads interestRate', async () => {
+    const c = client()
+    mockResults.push({ result: '500' })
+    await c.getInterestRate({ vault: VAULT })
+    assert.equal(calls[0].action, 'read-contract')
+    assert.ok(calls[0].params.method.includes('interestRate'))
+  })
+})
+
+describe('getMaxDeposit', () => {
+  it('reads maxDeposit', async () => {
+    const c = client()
+    mockResults.push({ result: '10000000' })
+    await c.getMaxDeposit({ vault: VAULT, user: USER })
+    assert.equal(calls[0].action, 'read-contract')
+    assert.ok(calls[0].params.method.includes('maxDeposit'))
+    assert.equal(calls[0].params.args[0], USER)
+  })
+
+  it('throws without user', async () => {
+    await assert.rejects(
+      () => client().getMaxDeposit({ vault: VAULT }),
+      (err) => err instanceof OpenTradeError && err.code === 'MISSING_INPUT',
+    )
+  })
+})
+
+describe('getMaxRedeem', () => {
+  it('reads maxRedeemRequest', async () => {
+    const c = client()
+    mockResults.push({ result: '5000000' })
+    await c.getMaxRedeem({ vault: VAULT, user: USER })
+    assert.equal(calls[0].action, 'read-contract')
+    assert.ok(calls[0].params.method.includes('maxRedeemRequest'))
+    assert.equal(calls[0].params.args[0], USER)
+  })
+
+  it('throws without user', async () => {
+    await assert.rejects(
+      () => client().getMaxRedeem({ vault: VAULT }),
+      (err) => err instanceof OpenTradeError && err.code === 'MISSING_INPUT',
+    )
+  })
+})
+
+describe('previewRedeem', () => {
+  it('reads previewRedeemRequest', async () => {
+    const c = client()
+    mockResults.push({ result: '990000' })
+    await c.previewRedeem({ vault: VAULT, shares: '1000000' })
+    assert.equal(calls[0].action, 'read-contract')
+    assert.ok(calls[0].params.method.includes('previewRedeemRequest'))
+    assert.equal(calls[0].params.args[0], '1000000')
+  })
+
+  it('throws without shares', async () => {
+    await assert.rejects(
+      () => client().previewRedeem({ vault: VAULT }),
+      (err) => err instanceof OpenTradeError && err.code === 'MISSING_INPUT',
+    )
+  })
+})
+
 // ── Vault resolution ─────────────────────────────────────────
 
 describe('vault resolution', () => {
