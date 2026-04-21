@@ -5,11 +5,12 @@ import { OpenTradeClient, OpenTradeError } from './opentrade.js'
 /**
  * W3 OpenTrade Action — command dispatch.
  *
- * 8 commands for stablecoin yield vault operations:
- * deposit, redeem, balance queries, and vault monitoring.
+ * 16 commands for stablecoin yield vault operations:
+ * deposit, redeem, withdrawal completion, balance queries,
+ * and vault monitoring.
  *
  * Wallets must be KYC'd and whitelisted by OpenTrade for
- * write operations (deposit, request-redeem).
+ * write operations (deposit, request-redeem, release-withdrawal).
  */
 
 let bridgeFn
@@ -101,6 +102,70 @@ const handlers = {
   'get-pool-overview': async () => {
     const r = await getClient().getPoolOverview({
       vault: core.getInput('vault', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  // ── Withdrawal completion ──────────────────────────────────
+  'release-withdrawal': async () => {
+    const r = await getClient().releaseWithdrawal({
+      vault: core.getInput('vault', { required: true }),
+      eventId: core.getInput('event-id', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  'get-active-withdraws': async () => {
+    const r = await getClient().getActiveWithdraws({
+      vault: core.getInput('vault', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  'get-account-state': async () => {
+    const r = await getClient().getAccountState({
+      vault: core.getInput('vault', { required: true }),
+      user: core.getInput('user', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  // ── UX read operations ─────────────────────────────────────
+  'convert-to-shares': async () => {
+    const r = await getClient().convertToShares({
+      vault: core.getInput('vault', { required: true }),
+      amount: core.getInput('amount', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  'get-interest-rate': async () => {
+    const r = await getClient().getInterestRate({
+      vault: core.getInput('vault', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  'get-max-deposit': async () => {
+    const r = await getClient().getMaxDeposit({
+      vault: core.getInput('vault', { required: true }),
+      user: core.getInput('user', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  'get-max-redeem': async () => {
+    const r = await getClient().getMaxRedeem({
+      vault: core.getInput('vault', { required: true }),
+      user: core.getInput('user', { required: true }),
+    })
+    setJsonOutput('result', r)
+  },
+
+  'preview-redeem': async () => {
+    const r = await getClient().previewRedeem({
+      vault: core.getInput('vault', { required: true }),
+      shares: core.getInput('shares', { required: true }),
     })
     setJsonOutput('result', r)
   },

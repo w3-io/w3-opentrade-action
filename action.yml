@@ -5,8 +5,9 @@ author: 'w3-io'
 inputs:
   command:
     description: >
-      Operation to perform. 8 commands: Write: deposit, request-redeem. Read: get-balance, get-asset-balance, get-exchange-rate,
-        get-vault-info, is-permitted, get-pool-overview.
+      Operation to perform. 16 commands: Write: deposit, request-redeem, release-withdrawal. Read: get-balance, get-asset-balance,
+        get-exchange-rate, get-vault-info, is-permitted, get-pool-overview, get-active-withdraws, get-account-state, convert-to-shares,
+        get-interest-rate, get-max-deposit, get-max-redeem, preview-redeem.
 
 
     required: true
@@ -29,6 +30,9 @@ inputs:
     required: false
   user:
     description: 'User address for balance/permission queries'
+    required: false
+  event-id:
+    description: 'Withdrawal event ID (for release-withdrawal)'
     required: false
 
 outputs:

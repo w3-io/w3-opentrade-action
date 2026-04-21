@@ -81,3 +81,65 @@ commands:
           type: object,
           description: '{totalAssets, availableAssets, exchangeRate, pendingWithdrawals}',
         }
+
+  - name: release-withdrawal
+    description: Release a settled withdrawal from a PoolFlex vault.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      event-id: { type: string, required: true, description: Withdrawal event ID from request-redeem }
+    outputs:
+      result: { type: object, description: Transaction receipt }
+
+  - name: get-active-withdraws
+    description: Get pending async withdrawal requests for a PoolDynamic vault.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+    outputs:
+      result: { type: string, description: Array of active withdrawal event IDs }
+
+  - name: get-account-state
+    description: Get full user position (shares, assets, pending withdrawals).
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      user: { type: string, required: true, description: User address }
+    outputs:
+      result: { type: object, description: Account state tuple }
+
+  - name: convert-to-shares
+    description: Convert an asset amount to equivalent vault shares.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      amount: { type: string, required: true, description: Asset amount in base units }
+    outputs:
+      result: { type: string, description: Equivalent share amount }
+
+  - name: get-interest-rate
+    description: Get the current yield/interest rate for a vault.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+    outputs:
+      result: { type: string, description: Interest rate }
+
+  - name: get-max-deposit
+    description: Get the maximum deposit allowed for a user.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      user: { type: string, required: true, description: User address }
+    outputs:
+      result: { type: string, description: Maximum deposit amount }
+
+  - name: get-max-redeem
+    description: Get the maximum redeemable shares for a user.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      user: { type: string, required: true, description: User address }
+    outputs:
+      result: { type: string, description: Maximum redeemable shares }
+
+  - name: preview-redeem
+    description: Preview the output of a redemption request.
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      shares: { type: string, required: true, description: Share amount to preview }
+    outputs:
+      result: { type: string, description: Expected asset output }
