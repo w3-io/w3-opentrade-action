@@ -28324,6 +28324,130 @@ class OpenTradeClient {
     }
   }
 
+  // ── Withdrawal completion ──────────────────────────────────────
+
+  /**
+   * Release a completed withdrawal from a PoolFlex vault.
+   *
+   * After request-redeem settles (T+0 to T+2), call this to claim
+   * the underlying stablecoins.
+   */
+  async releaseWithdrawal({ vault, eventId } = {}) {
+    if (!eventId) throw new OpenTradeError('MISSING_INPUT', 'eventId is required')
+    const vaultAddr = this.#resolveVault(vault)
+
+    return this.#call(
+      vaultAddr,
+      'function releaseWithdrawal(uint256 eventId) returns (uint256)',
+      [eventId],
+    )
+  }
+
+  /**
+   * Get active (pending) withdrawal requests for a PoolDynamic vault.
+   */
+  async getActiveWithdraws({ vault } = {}) {
+    const vaultAddr = this.#resolveVault(vault)
+
+    return this.#read(vaultAddr, 'function getActiveWithdraws() view returns (uint256[])', [])
+  }
+
+  /**
+   * Get full account state for a user.
+   *
+   * Tries PoolFlex signature first (getPoolAccountState), then
+   * falls back to PoolDynamic (getPoolDynamicAccountState).
+   */
+  async getAccountState({ vault, user } = {}) {
+    if (!user) throw new OpenTradeError('MISSING_INPUT', 'user address is required')
+    const vaultAddr = this.#resolveVault(vault)
+
+    // Try PoolFlex first
+    try {
+      return await this.#read(
+        vaultAddr,
+        'function getPoolAccountState(address account) view returns (tuple)',
+        [user],
+      )
+    } catch {
+      // Fall back to PoolDynamic
+      return this.#read(
+        vaultAddr,
+        'function getPoolDynamicAccountState(address account) view returns (tuple)',
+        [user],
+      )
+    }
+  }
+
+  // ── UX read operations ───────────────────────────────────────
+
+  /**
+   * Convert an asset amount to the equivalent shares.
+   *
+   * Reverse of convertToAssets (used in get-asset-balance).
+   */
+  async convertToShares({ vault, amount } = {}) {
+    if (!amount) throw new OpenTradeError('MISSING_INPUT', 'amount is required')
+    const vaultAddr = this.#resolveVault(vault)
+
+    return this.#read(
+      vaultAddr,
+      'function convertToShares(uint256 assets) view returns (uint256)',
+      [amount],
+    )
+  }
+
+  /**
+   * Get the current interest/yield rate for a vault.
+   */
+  async getInterestRate({ vault } = {}) {
+    const vaultAddr = this.#resolveVault(vault)
+
+    return this.#read(vaultAddr, 'function interestRate() view returns (uint256)', [])
+  }
+
+  /**
+   * Get the maximum deposit allowed for a user.
+   */
+  async getMaxDeposit({ vault, user } = {}) {
+    if (!user) throw new OpenTradeError('MISSING_INPUT', 'user address is required')
+    const vaultAddr = this.#resolveVault(vault)
+
+    return this.#read(
+      vaultAddr,
+      'function maxDeposit(address receiver) view returns (uint256)',
+      [user],
+    )
+  }
+
+  /**
+   * Get the maximum redeemable shares for a user.
+   */
+  async getMaxRedeem({ vault, user } = {}) {
+    if (!user) throw new OpenTradeError('MISSING_INPUT', 'user address is required')
+    const vaultAddr = this.#resolveVault(vault)
+
+    return this.#read(
+      vaultAddr,
+      'function maxRedeemRequest(address owner) view returns (uint256)',
+      [user],
+    )
+  }
+
+  /**
+   * Preview the output of a redemption request.
+   */
+  async previewRedeem({ vault, shares } = {}) {
+    if (!shares) throw new OpenTradeError('MISSING_INPUT', 'shares amount is required')
+    const vaultAddr = this.#resolveVault(vault)
+
+    return this.#read(
+      vaultAddr,
+      'function previewRedeemRequest(uint256 shares) view returns (uint256)',
+      [shares],
+    )
+  }
+
   // ── Private helpers ───────────────────────────────────────────
 
   async #getUnderlyingAsset(vaultAddr) {
@@ -28351,11 +28475,12 @@ class OpenTradeClient {
 /**
  * W3 OpenTrade Action — command dispatch.
  *
- * 8 commands for stablecoin yield vault operations:
- * deposit, redeem, balance queries, and vault monitoring.
+ * 16 commands for stablecoin yield vault operations:
+ * deposit, redeem, withdrawal completion, balance queries,
+ * and vault monitoring.
  *
  * Wallets must be KYC'd and whitelisted by OpenTrade for
- * write operations (deposit, request-redeem).
+ * write operations (deposit, request-redeem, release-withdrawal).
  */
 
 let bridgeFn
@@ -28447,6 +28572,70 @@ const handlers = {
   'get-pool-overview': async () => {
     const r = await getClient().getPoolOverview({
       vault: core.getInput('vault', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  // ── Withdrawal completion ──────────────────────────────────
+  'release-withdrawal': async () => {
+    const r = await getClient().releaseWithdrawal({
+      vault: core.getInput('vault', { required: true }),
+      eventId: core.getInput('event-id', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  'get-active-withdraws': async () => {
+    const r = await getClient().getActiveWithdraws({
+      vault: core.getInput('vault', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  'get-account-state': async () => {
+    const r = await getClient().getAccountState({
+      vault: core.getInput('vault', { required: true }),
+      user: core.getInput('user', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  // ── UX read operations ─────────────────────────────────────
+  'convert-to-shares': async () => {
+    const r = await getClient().convertToShares({
+      vault: core.getInput('vault', { required: true }),
+      amount: core.getInput('amount', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  'get-interest-rate': async () => {
+    const r = await getClient().getInterestRate({
+      vault: core.getInput('vault', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  'get-max-deposit': async () => {
+    const r = await getClient().getMaxDeposit({
+      vault: core.getInput('vault', { required: true }),
+      user: core.getInput('user', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  'get-max-redeem': async () => {
+    const r = await getClient().getMaxRedeem({
+      vault: core.getInput('vault', { required: true }),
+      user: core.getInput('user', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', r)
+  },
+
+  'preview-redeem': async () => {
+    const r = await getClient().previewRedeem({
+      vault: core.getInput('vault', { required: true }),
+      shares: core.getInput('shares', { required: true }),
     })
     ;(0,dist.setJsonOutput)('result', r)
   },
