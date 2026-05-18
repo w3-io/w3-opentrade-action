@@ -1,0 +1,155 @@
+# E2E Test Workflow — OpenTrade
+#
+# Prerequisites:
+#   - W3 bridge reachable at $W3_BRIDGE_URL with an Avalanche RPC
+#     configured via W3_CHAIN_RPC_AVALANCHE
+#   - For write steps: signer key on the bridge
+#     (W3_BRIDGE_SIGNER_ETHEREUM) that is KYC'd and whitelisted on
+#     the target OpenTrade vault, holding at least 1 USDC of the
+#     vault's underlying asset
+#
+# SKIP: deposit, request-redeem, release-withdrawal — these require a
+# KYC-whitelisted signer with vault permissions and on-chain funds.
+# Left as commented-out templates so an authorized operator can flip
+# them on when running the suite with a permitted signer.
+
+name: opentrade-e2e
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      VAULT: '0x09Ca60Ca323a6313aE144778c3EbDfCCFBB5e5D2'
+      NETWORK: avalanche
+      # An arbitrary non-whitelisted address used for is-permitted /
+      # balance probes. Reads are address-agnostic.
+      PROBE_USER: '0x0000000000000000000000000000000000000001'
+    steps:
+      - name: Get exchange rate
+        id: rate
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-exchange-rate
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+
+      - name: Get vault info
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-vault-info
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+
+      - name: Get pool overview
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-pool-overview
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+
+      - name: Get interest rate
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-interest-rate
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+
+      - name: Check permission for probe address
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: is-permitted
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          user: ${{ env.PROBE_USER }}
+
+      - name: Get share balance for probe address
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-balance
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          user: ${{ env.PROBE_USER }}
+
+      - name: Get asset-equivalent balance for probe address
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-asset-balance
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          user: ${{ env.PROBE_USER }}
+
+      - name: Get max deposit for probe address
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-max-deposit
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          user: ${{ env.PROBE_USER }}
+
+      - name: Get max redeem for probe address
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-max-redeem
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          user: ${{ env.PROBE_USER }}
+
+      - name: Get account state for probe address
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-account-state
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          user: ${{ env.PROBE_USER }}
+
+      - name: Convert 1 USDC to shares
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: convert-to-shares
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          amount: '1000000'
+
+      - name: Preview redeeming 1 share unit
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: preview-redeem
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+          shares: '1000000'
+
+      - name: List active async withdrawals
+        uses: w3-io/w3-opentrade-action@v0
+        with:
+          command: get-active-withdraws
+          network: ${{ env.NETWORK }}
+          vault: ${{ env.VAULT }}
+
+      # SKIP: write steps below require a KYC-whitelisted signer.
+      # - name: Deposit 1 USDC into the vault
+      #   id: deposit
+      #   uses: w3-io/w3-opentrade-action@v0
+      #   with:
+      #     command: deposit
+      #     network: ${{ env.NETWORK }}
+      #     vault: ${{ env.VAULT }}
+      #     amount: '1000000'
+      #
+      # - name: Request redemption of 1 share unit
+      #   id: redeem
+      #   uses: w3-io/w3-opentrade-action@v0
+      #   with:
+      #     command: request-redeem
+      #     network: ${{ env.NETWORK }}
+      #     vault: ${{ env.VAULT }}
+      #     shares: '1000000'
+      #
+      # - name: Release a settled withdrawal (PoolFlex only)
+      #   uses: w3-io/w3-opentrade-action@v0
+      #   with:
+      #     command: release-withdrawal
+      #     network: ${{ env.NETWORK }}
+      #     vault: ${{ env.VAULT }}
+      #     event-id: '<event-id from request-redeem receipt>'
