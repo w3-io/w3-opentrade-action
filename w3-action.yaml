@@ -143,3 +143,93 @@ commands:
       shares: { type: string, required: true, description: Share amount to preview }
     outputs:
       result: { type: string, description: Expected asset output }
+
+# ── Display metadata for W3 Explorer + AI agents ─────────────────────
+# Templating: {{ path.to.value | filter | filter2 }}. See
+# w3-action-template/docs/display-schema.md for the canonical reference.
+display:
+  brand:
+    name: "OpenTrade"
+    short_name: "OpenTrade"
+    description: "Institutional yield vaults · Treasury, MMF, corporate credit"
+    logo: "https://raw.githubusercontent.com/w3-io/w3-opentrade-action/main/assets/logo.svg"
+    color: "#2563EB"
+
+  commands:
+    deposit:
+      icon: "vault"
+      title_template: "Deposit to {{ inputs.vault | known_contract_short }}"
+      subtitle_template: "{{ inputs.amount | format_usdc_base }} → {{ inputs.network | chain_pretty }}"
+      summary:
+        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
+        - { label: "Amount", value: "{{ inputs.amount | format_usdc_base }}" }
+        - { label: "Network", value: "{{ inputs.network | chain_pretty }}" }
+        - { label: "Tx", value: "{{ outputs.result.txHash | truncate_addr }}" }
+      tx_hash_path: "outputs.result.txHash"
+      chain_explorer:
+        ethereum: "https://etherscan.io/tx/{{tx_hash}}"
+        avalanche: "https://snowtrace.io/tx/{{tx_hash}}"
+        plume: "https://explorer.plume.org/tx/{{tx_hash}}"
+
+    request-redeem:
+      icon: "redeem"
+      title_template: "Redeem {{ inputs.vault | known_contract_short }}"
+      subtitle_template: "{{ inputs.shares }} shares"
+      summary:
+        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
+        - { label: "Shares", value: "{{ inputs.shares }}" }
+        - { label: "Tx", value: "{{ outputs.result.txHash | truncate_addr }}" }
+      tx_hash_path: "outputs.result.txHash"
+
+    get-balance:
+      icon: "info"
+      title_template: "Position in {{ inputs.vault | known_contract_short }}"
+      subtitle_template: "{{ inputs.user | truncate_addr }}"
+      summary:
+        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
+        - { label: "User", value: "{{ inputs.user | truncate_addr }}" }
+        - { label: "Shares", value: "{{ outputs.result }}" }
+
+    get-asset-balance:
+      icon: "info"
+      title_template: "USDC value in {{ inputs.vault | known_contract_short }}"
+      subtitle_template: "{{ inputs.user | truncate_addr }}"
+      summary:
+        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
+        - { label: "Underlying", value: "{{ outputs.result | format_usdc_base }}" }
+
+    get-exchange-rate:
+      icon: "chart"
+      title_template: "Exchange rate · {{ inputs.vault | known_contract_short }}"
+      subtitle_template: "shares → assets"
+      summary:
+        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
+        - { label: "Rate", value: "{{ outputs.result | format_rate }}" }
+
+    get-vault-info:
+      icon: "info"
+      title_template: "{{ inputs.vault | known_contract_short }} info"
+      summary:
+        - { label: "Name", value: "{{ outputs.result.name }}" }
+        - { label: "Symbol", value: "{{ outputs.result.symbol }}" }
+        - { label: "State", value: "{{ outputs.result.state }}" }
+        - { label: "Exchange rate", value: "{{ outputs.result.exchangeRate | format_rate }}" }
+        - { label: "Total assets", value: "{{ outputs.result.totalAssets | format_usdc_base }}" }
+
+    is-permitted:
+      icon: "check"
+      title_template: "KYC check · {{ inputs.vault | known_contract_short }}"
+      subtitle_template: "{{ inputs.user | truncate_addr }}"
+      summary:
+        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
+        - { label: "Wallet", value: "{{ inputs.user | truncate_addr }}" }
+        - { label: "Permitted", value: "{{ outputs.result }}" }
+
+    get-pool-overview:
+      icon: "chart"
+      title_template: "Pool overview · {{ inputs.vault | known_contract_short }}"
+      summary:
+        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
+        - { label: "Total assets", value: "{{ outputs.result.totalAssets | format_usdc_base }}" }
+        - { label: "Available", value: "{{ outputs.result.totalAvailableAssets | format_usdc_base }}" }
+        - { label: "Pending withdrawals", value: "{{ outputs.result.pendingWithdrawals | format_usdc_base }}" }
