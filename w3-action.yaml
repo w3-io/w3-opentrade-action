@@ -159,12 +159,12 @@ display:
     deposit:
       icon: "vault"
       title_template: "Deposit to {{ inputs.vault | known_contract_short }}"
-      subtitle_template: "{{ inputs.amount | format_usdc_base }} → {{ inputs.network | chain_pretty }}"
+      subtitle_template: "{{ inputs.amount | format_usdc_base }}"
       summary:
-        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
         - { label: "Amount", value: "{{ inputs.amount | format_usdc_base }}" }
-        - { label: "Network", value: "{{ inputs.network | chain_pretty }}" }
         - { label: "Tx", value: "{{ outputs.result.txHash | truncate_addr }}" }
+      chain_path: "inputs.network"
+      destination_brand_path: "inputs.vault"
       tx_hash_path: "outputs.result.txHash"
       chain_explorer:
         ethereum: "https://etherscan.io/tx/{{tx_hash}}"
@@ -186,9 +186,10 @@ display:
       title_template: "Position in {{ inputs.vault | known_contract_short }}"
       subtitle_template: "{{ inputs.user | truncate_addr }}"
       summary:
-        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
         - { label: "User", value: "{{ inputs.user | truncate_addr }}" }
         - { label: "Shares", value: "{{ outputs.result }}" }
+      chain_path: "inputs.network"
+      destination_brand_path: "inputs.vault"
 
     get-asset-balance:
       icon: "info"
@@ -229,7 +230,8 @@ display:
       icon: "chart"
       title_template: "Pool overview · {{ inputs.vault | known_contract_short }}"
       summary:
-        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
         - { label: "Total assets", value: "{{ outputs.result.totalAssets | format_usdc_base }}" }
         - { label: "Available", value: "{{ outputs.result.totalAvailableAssets | format_usdc_base }}" }
         - { label: "Pending withdrawals", value: "{{ outputs.result.pendingWithdrawals | format_usdc_base }}" }
+      chain_path: "inputs.network"
+      destination_brand_path: "inputs.vault"
