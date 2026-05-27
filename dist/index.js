@@ -28032,6 +28032,82 @@ var __webpack_exports__ = {};
 var core = __nccwpck_require__(7484);
 // EXTERNAL MODULE: ./node_modules/@w3-io/action-core/dist/index.js + 8 modules
 var dist = __nccwpck_require__(4653);
+;// CONCATENATED MODULE: ./src/encode.js
+// Hand-rolled ABI encoder for the calldata shapes this action's
+// intent builders produce. All inputs are static types (uint256/
+// address), so the encoding is selector + 32-byte-padded args.
+//
+// Selectors are keccak256("functionName(arg_types)")[:4]. Hard-coded
+// here so build-* commands have no chain-call or external-encoding
+// dependency.
+//
+// W3 policy: amounts in approve calls MUST be exact. Never max-uint.
+
+
+
+const SELECTORS = {
+  // ERC-20
+  approve: '095ea7b3', // approve(address,uint256)
+  // ERC-4626 — OpenTrade vaults use the standard signature here.
+  // PoolFlex and PoolDynamic both accept `deposit(assets, lender)`.
+  deposit: '6e553f65', // deposit(uint256,address)
+}
+
+function pad32Hex(value) {
+  if (typeof value !== 'string') {
+    throw new dist.W3ActionError(
+      'INVALID_INPUT',
+      `pad32Hex requires hex string; got ${typeof value}`,
+    )
+  }
+  return value.toLowerCase().replace(/^0x/, '').padStart(64, '0')
+}
+
+function pad32BigInt(value) {
+  let bi
+  try {
+    bi = BigInt(value)
+  } catch {
+    throw new dist.W3ActionError(
+      'INVALID_INPUT',
+      `pad32BigInt: cannot convert "${value}" to BigInt`,
+    )
+  }
+  if (bi < 0n) {
+    throw new dist.W3ActionError(
+      'INVALID_INPUT',
+      `pad32BigInt: negative values not supported (got ${bi})`,
+    )
+  }
+  return bi.toString(16).padStart(64, '0')
+}
+
+/** Encode `approve(spender, amount)`. */
+function encodeApprove(spender, amount) {
+  return '0x' + SELECTORS.approve + pad32Hex(spender) + pad32BigInt(amount)
+}
+
+/** Encode ERC-4626 `deposit(assets, receiver)` — OpenTrade vault entry. */
+function encodeOpenTradeDeposit(amount, receiver) {
+  return '0x' + SELECTORS.deposit + pad32BigInt(amount) + pad32Hex(receiver)
+}
+
+/** Convert USDC amount string ("40.00") to base units string ("40000000"). */
+function parseUsdcAmount(amount) {
+  if (typeof amount !== 'string') {
+    throw new dist.W3ActionError(
+      'INVALID_INPUT',
+      `amount must be a string (e.g. "40.00"); got ${typeof amount}`,
+    )
+  }
+  const parts = amount.split('.')
+  const whole = parts[0] || '0'
+  const frac = (parts[1] || '').padEnd(6, '0').slice(0, 6)
+  // Strip leading zeros from whole portion but keep at least "0".
+  const wholeNorm = whole.replace(/^0+/, '') || '0'
+  return wholeNorm + frac
+}
+
 ;// CONCATENATED MODULE: ./src/opentrade.js
 /**
  * OpenTrade vault client — stablecoin yield via W3 bridge.
@@ -28052,6 +28128,7 @@ var dist = __nccwpck_require__(4653);
  *
  * Supported networks: ethereum, avalanche, plume
  */
+
 
 
 
@@ -28087,6 +28164,249 @@ const VAULTS = {
 }
 
 const SUPPORTED_NETWORKS = ['ethereum', 'avalanche', 'plume']
+
+/**
+ * Resolve a vault symbol (e.g. "XFTB") or address to a 20-byte hex
+ * address on the given network. Exported as a free function so the
+ * build-* intent builders can use it without instantiating the
+ * bridge-dependent OpenTradeClient.
+ */
+function resolveVaultAddress(vault, network) {
+  if (!vault) throw new OpenTradeError('MISSING_INPUT', 'vault address or symbol is required')
+  if (!network) throw new OpenTradeError('MISSING_INPUT', 'network is required')
+  if (vault.startsWith('0x')) return vault
+  const map = VAULTS[network] || {}
+  const addr = map[vault.toUpperCase()]
+  if (!addr) {
+    throw new OpenTradeError(
+      'INVALID_INPUT',
+      `Unknown vault "${vault}" on ${network}. Known: ${Object.keys(map).join(', ')}`,
+    )
+  }
+  return addr
+}
+
+/**
+ * USDC token addresses per network. Used by build-approve to encode
+ * the right approve target. Hard-coded — these are stable Circle
+ * deployments, and intent-builder commands should never need a
+ * network round-trip to resolve them.
+ */
+const USDC = {
+  avalanche: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+  ethereum: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+  plume: '0x78adD880A697070c1e765Ac44D65323a0DcCE913',
+}
+
+/**
+ * Numeric chain IDs per supported network. Emitted in build-* output
+ * so downstream consumers (ForDefi, Safe) can validate the intent
+ * targets the chain they think it does.
+ */
+const CHAIN_IDS = {
+  avalanche: 43114,
+  ethereum: 1,
+  plume: 98865,
+}
+
+function requireNetwork(network) {
+  if (!network) throw new OpenTradeError('MISSING_INPUT', 'network is required')
+  if (!SUPPORTED_NETWORKS.includes(network)) {
+    throw new OpenTradeError(
+      'UNSUPPORTED_NETWORK',
+      `Network "${network}" is not supported. Available: ${SUPPORTED_NETWORKS.join(', ')}`,
+    )
+  }
+}
+
+/** Default OpenTrade API base URL. Override per call for sandbox. */
+const OPENTRADE_API_DEFAULT = 'https://api.open-trade.io'
+
+/**
+ * Fetch trailing-yield metrics from OpenTrade's public API for a
+ * PoolDynamic (v5) vault. Used by the `get-apy` command to surface
+ * live APY on the W3 Explorer card. Returns the most recent
+ * yieldMetrics row plus a small summary block of the most commonly-
+ * displayed APY windows (1-day, 7-day, 30-day, since-inception).
+ *
+ * Auth: requires an OpenTrade API key (header `x-api-key`). Set via
+ * the workflow with `api-key: ${{ secrets.OPENTRADE_API_KEY }}`.
+ *
+ * Caller is responsible for vault address resolution if passing a
+ * symbol — this function only accepts already-resolved addresses or
+ * symbols it can look up via `resolveVaultAddress`.
+ *
+ * Throws an OpenTradeError on auth failure (401/403), invalid vault
+ * (400/404), or any non-2xx response. The action's `handleError`
+ * surfaces the message verbatim so the demo card shows the real
+ * problem rather than "Unknown".
+ */
+async function getApy({ vault, network, apiKey, apiBase } = {}) {
+  if (!apiKey) {
+    throw new OpenTradeError(
+      'MISSING_INPUT',
+      'api-key is required (pass ${{ secrets.OPENTRADE_API_KEY }})',
+    )
+  }
+  requireNetwork(network)
+  const vaultAddr = resolveVaultAddress(vault, network)
+  const base = apiBase || OPENTRADE_API_DEFAULT
+  const url = `${base.replace(/\/+$/, '')}/poolYieldMetrics/${vaultAddr}`
+
+  let res
+  try {
+    res = await fetch(url, {
+      method: 'GET',
+      headers: { 'x-api-key': apiKey, accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    })
+  } catch (err) {
+    throw new OpenTradeError(
+      'HTTP_ERROR',
+      `OpenTrade API network error: ${err && err.message ? err.message : err}`,
+    )
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new OpenTradeError(
+      'HTTP_ERROR',
+      `OpenTrade API ${res.status}: ${body.slice(0, 240)}`,
+      { details: { status: res.status, url } },
+    )
+  }
+  const json = await res.json()
+  const rows = Array.isArray(json?.yieldMetrics) ? json.yieldMetrics : []
+  // Latest row = most recent calculation. The API returns oldest-first
+  // by default but we ask for no date range, so it returns the latest
+  // single day. Defensive: take the row with the largest dayNumber.
+  const latest = rows.reduce(
+    (acc, row) => (acc && acc.dayNumber > row.dayNumber ? acc : row),
+    null,
+  )
+  if (!latest) {
+    throw new OpenTradeError(
+      'NO_DATA',
+      `OpenTrade API returned no yieldMetrics for vault ${vaultAddr}`,
+    )
+  }
+
+  return {
+    vault: vaultAddr,
+    chain: network,
+    chainId: CHAIN_IDS[network],
+    date: latest.date,
+    calculatedAt: latest.calculatedTimestamp,
+    // The most commonly displayed APY windows. All values are
+    // decimal (e.g. 0.0521 = 5.21%), matching OpenTrade's response.
+    apy1d: latest.yield1DayTrailingAnnualized,
+    apy7d: latest.yield7DayTrailingAnnualized,
+    apy30d: latest.yield30DayTrailingAnnualized,
+    apySinceInception: latest.yieldSinceInceptionAnnualized,
+    // Cumulative figures for the same windows (useful for "earned X
+    // over the past N days" framing).
+    cum1d: latest.yield1DayCumulative,
+    cum7d: latest.yield7DayTrailingCumulative,
+    cum30d: latest.yield30DayTrailingCumulative,
+    // The full row for callers that want every metric the API
+    // exposes (YTD, 90d, 12m, calendar-month-completed, etc.).
+    raw: latest,
+  }
+}
+
+/**
+ * Build an unsigned exact-amount ERC-20 approve transaction intent
+ * for the vault's underlying USDC on the given network. The returned
+ * payload is what an external signer (ForDefi, Safe, Fireblocks)
+ * consumes — never broadcast by this action. Pure: no chain call,
+ * no signer touched.
+ *
+ * The amount MUST be exact — this builder will never produce a
+ * max-uint approve. The spender defaults to the resolved vault
+ * address; pass an explicit `spender` to approve a different
+ * contract (rare).
+ */
+function buildApprove(opts) {
+  if (!opts || !opts.amount) {
+    throw new OpenTradeError(
+      'MISSING_INPUT',
+      'amount is required (exact USDC amount, e.g. "40.00"; max-uint approvals are disallowed)',
+    )
+  }
+  requireNetwork(opts.network)
+  const vaultAddr = resolveVaultAddress(opts.vault, opts.network)
+  const spender = opts.spender || vaultAddr
+  if (!/^0x[a-fA-F0-9]{40}$/.test(spender)) {
+    throw new OpenTradeError(
+      'INVALID_INPUT',
+      `spender must be a 20-byte hex address; got "${spender}"`,
+    )
+  }
+  const usdc = USDC[opts.network]
+  const amountRaw = parseUsdcAmount(opts.amount)
+  const hexData = encodeApprove(spender, amountRaw)
+
+  return {
+    intent: 'erc20-approve',
+    chain: opts.network,
+    chainId: CHAIN_IDS[opts.network],
+    to: usdc,
+    value: '0',
+    data: { type: 'hex', hex_data: hexData },
+    selector: hexData.slice(0, 10),
+    token: usdc,
+    spender,
+    vault: vaultAddr,
+    amount: amountRaw,
+    amountFormatted: opts.amount,
+  }
+}
+
+/**
+ * Build an unsigned ERC-4626 deposit transaction intent against an
+ * OpenTrade vault. Returns the {chain, to, value, data} payload an
+ * external signer consumes. Pure: no chain call, no signer touched.
+ *
+ * Caller's responsibility: ensure the resolved `receiver` (the
+ * signer's address, typically) has at least `amount` USDC and an
+ * existing approval to the vault for `amount` USDC. The companion
+ * `buildApprove` command produces the matching exact-amount approve.
+ */
+function buildDeposit(opts) {
+  if (!opts || !opts.amount) {
+    throw new OpenTradeError('MISSING_INPUT', 'amount is required (e.g. "40.00")')
+  }
+  if (!opts.receiver) {
+    throw new OpenTradeError(
+      'MISSING_INPUT',
+      'receiver is required (the address that will own the resulting vault shares)',
+    )
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(opts.receiver)) {
+    throw new OpenTradeError(
+      'INVALID_INPUT',
+      `receiver must be a 20-byte hex address; got "${opts.receiver}"`,
+    )
+  }
+  requireNetwork(opts.network)
+  const vaultAddr = resolveVaultAddress(opts.vault, opts.network)
+  const amountRaw = parseUsdcAmount(opts.amount)
+  const hexData = encodeOpenTradeDeposit(amountRaw, opts.receiver)
+
+  return {
+    intent: 'erc4626-deposit',
+    chain: opts.network,
+    chainId: CHAIN_IDS[opts.network],
+    to: vaultAddr,
+    value: '0',
+    data: { type: 'hex', hex_data: hexData },
+    selector: hexData.slice(0, 10),
+    vault: vaultAddr,
+    underlying: USDC[opts.network],
+    amount: amountRaw,
+    amountFormatted: opts.amount,
+    receiver: opts.receiver,
+  }
+}
 
 class OpenTradeClient {
   /**
@@ -28126,18 +28446,7 @@ class OpenTradeClient {
 
   /** Resolve vault address from symbol or address. */
   #resolveVault(vault) {
-    if (!vault) throw new OpenTradeError('MISSING_INPUT', 'vault address or symbol is required')
-    // If it looks like an address, use it directly
-    if (vault.startsWith('0x')) return vault
-    // Otherwise try to resolve from known vaults
-    const addr = this.vaults[vault.toUpperCase()]
-    if (!addr) {
-      throw new OpenTradeError(
-        'INVALID_INPUT',
-        `Unknown vault "${vault}" on ${this.network}. Known: ${Object.keys(this.vaults).join(', ')}`,
-      )
-    }
-    return addr
+    return resolveVaultAddress(vault, this.network)
   }
 
   // ── Write operations ──────────────────────────────────────────
@@ -28513,6 +28822,74 @@ function getClient() {
 }
 
 const handlers = {
+  // ── Intent builders (pure — no chain call, no signing) ─────
+  //
+  // `result` is the full intent object, used by the Explorer's display
+  // block for card rendering. The flat per-field outputs (`to`,
+  // `chain`, `data_hex`) are for workflow consumption — the W3
+  // expression engine reads outputs as strings, so a downstream
+  // `${{ steps.build.outputs.result.to }}` does NOT navigate the
+  // JSON-encoded result. Flat outputs interpolate cleanly into the
+  // ForDefi `data:` block.
+  'build-approve': async () => {
+    const result = buildApprove({
+      vault: core.getInput('vault', { required: true }),
+      amount: core.getInput('amount', { required: true }),
+      network: core.getInput('network', { required: true }),
+      spender: core.getInput('spender') || undefined,
+    })
+    ;(0,dist.setJsonOutput)('result', result)
+    core.setOutput('to', result.to)
+    core.setOutput('chain', result.chain)
+    core.setOutput('chain_id', String(result.chainId))
+    core.setOutput('data_hex', result.data.hex_data)
+    core.setOutput('amount', result.amount)
+    core.setOutput('amount_formatted', result.amountFormatted)
+    core.setOutput('spender', result.spender)
+    core.setOutput('vault', result.vault)
+  },
+
+  // Fetch live yield metrics from OpenTrade's API for a PoolDynamic
+  // (v5) vault. Requires an API key — pass via `api-key` input,
+  // typically `${{ secrets.OPENTRADE_API_KEY }}`.
+  'get-apy': async () => {
+    const result = await getApy({
+      vault: core.getInput('vault', { required: true }),
+      network: core.getInput('network', { required: true }),
+      apiKey: core.getInput('api-key', { required: true }),
+      apiBase: core.getInput('api-base') || undefined,
+    })
+    ;(0,dist.setJsonOutput)('result', result)
+    // Flat per-field outputs for downstream display templates and
+    // workflow consumption.
+    core.setOutput('vault', result.vault)
+    core.setOutput('chain', result.chain)
+    core.setOutput('date', result.date || '')
+    if (result.apy1d != null) core.setOutput('apy_1d', String(result.apy1d))
+    if (result.apy7d != null) core.setOutput('apy_7d', String(result.apy7d))
+    if (result.apy30d != null) core.setOutput('apy_30d', String(result.apy30d))
+    if (result.apySinceInception != null)
+      core.setOutput('apy_since_inception', String(result.apySinceInception))
+  },
+
+  'build-deposit': async () => {
+    const result = buildDeposit({
+      vault: core.getInput('vault', { required: true }),
+      amount: core.getInput('amount', { required: true }),
+      receiver: core.getInput('receiver', { required: true }),
+      network: core.getInput('network', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', result)
+    core.setOutput('to', result.to)
+    core.setOutput('chain', result.chain)
+    core.setOutput('chain_id', String(result.chainId))
+    core.setOutput('data_hex', result.data.hex_data)
+    core.setOutput('amount', result.amount)
+    core.setOutput('amount_formatted', result.amountFormatted)
+    core.setOutput('vault', result.vault)
+    core.setOutput('receiver', result.receiver)
+  },
+
   // ── Write operations ────────────────────────────────────────
   deposit: async () => {
     const r = await getClient().deposit({
