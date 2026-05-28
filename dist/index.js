@@ -28051,14 +28051,16 @@ const SELECTORS = {
   // ERC-4626 — OpenTrade vaults use the standard signature here.
   // PoolFlex and PoolDynamic both accept `deposit(assets, lender)`.
   deposit: '6e553f65', // deposit(uint256,address)
+  // ERC-7540 async redemption — the only redeem entrypoint exposed
+  // by OpenTrade v4 PoolFlex. Calling it queues an off-chain
+  // settlement; USDC is paid directly to `controller` at T+0 to T+2.
+  // There is no on-chain `withdraw`/`redeem` claim step.
+  requestRedeem: 'aa2f892d', // requestRedeem(uint256,address,address)
 }
 
 function pad32Hex(value) {
   if (typeof value !== 'string') {
-    throw new dist.W3ActionError(
-      'INVALID_INPUT',
-      `pad32Hex requires hex string; got ${typeof value}`,
-    )
+    throw new dist.W3ActionError('INVALID_INPUT', `pad32Hex requires hex string; got ${typeof value}`)
   }
   return value.toLowerCase().replace(/^0x/, '').padStart(64, '0')
 }
@@ -28068,10 +28070,7 @@ function pad32BigInt(value) {
   try {
     bi = BigInt(value)
   } catch {
-    throw new dist.W3ActionError(
-      'INVALID_INPUT',
-      `pad32BigInt: cannot convert "${value}" to BigInt`,
-    )
+    throw new dist.W3ActionError('INVALID_INPUT', `pad32BigInt: cannot convert "${value}" to BigInt`)
   }
   if (bi < 0n) {
     throw new dist.W3ActionError(
@@ -28090,6 +28089,17 @@ function encodeApprove(spender, amount) {
 /** Encode ERC-4626 `deposit(assets, receiver)` — OpenTrade vault entry. */
 function encodeOpenTradeDeposit(amount, receiver) {
   return '0x' + SELECTORS.deposit + pad32BigInt(amount) + pad32Hex(receiver)
+}
+
+/**
+ * Encode ERC-7540 `requestRedeem(shares, controller, owner)`. Queues
+ * an OpenTrade off-chain settlement; USDC is paid to `controller` at
+ * T+0 to T+2 with no on-chain claim step.
+ */
+function encodeRequestRedeem(shares, controller, owner) {
+  return (
+    '0x' + SELECTORS.requestRedeem + pad32BigInt(shares) + pad32Hex(controller) + pad32Hex(owner)
+  )
 }
 
 /** Convert USDC amount string ("40.00") to base units string ("40000000"). */
@@ -28268,21 +28278,16 @@ async function getApy({ vault, network, apiKey, apiBase } = {}) {
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new OpenTradeError(
-      'HTTP_ERROR',
-      `OpenTrade API ${res.status}: ${body.slice(0, 240)}`,
-      { details: { status: res.status, url } },
-    )
+    throw new OpenTradeError('HTTP_ERROR', `OpenTrade API ${res.status}: ${body.slice(0, 240)}`, {
+      details: { status: res.status, url },
+    })
   }
   const json = await res.json()
   const rows = Array.isArray(json?.yieldMetrics) ? json.yieldMetrics : []
   // Latest row = most recent calculation. The API returns oldest-first
   // by default but we ask for no date range, so it returns the latest
   // single day. Defensive: take the row with the largest dayNumber.
-  const latest = rows.reduce(
-    (acc, row) => (acc && acc.dayNumber > row.dayNumber ? acc : row),
-    null,
-  )
+  const latest = rows.reduce((acc, row) => (acc && acc.dayNumber > row.dayNumber ? acc : row), null)
   if (!latest) {
     throw new OpenTradeError(
       'NO_DATA',
@@ -28405,6 +28410,66 @@ function buildDeposit(opts) {
     amount: amountRaw,
     amountFormatted: opts.amount,
     receiver: opts.receiver,
+  }
+}
+
+/**
+ * Build an unsigned ERC-7540 `requestRedeem(shares, controller, owner)`
+ * transaction intent. Calling this on the chain queues an off-chain
+ * settlement with OpenTrade; USDC is paid directly to `controller`
+ * at T+0 to T+2. There is no on-chain claim — once the request lands,
+ * the signer's job is done.
+ *
+ * shares is supplied in the share token's native base units (typically
+ * 6-decimal for USDC-pegged vaults). Use the live `balanceOf(holder)`
+ * read on the vault to get the exact integer; passing a float-shaped
+ * amount string is NOT supported here.
+ */
+function buildRequestRedeem(opts) {
+  if (!opts || opts.shares === undefined || opts.shares === null) {
+    throw new OpenTradeError(
+      'MISSING_INPUT',
+      'shares is required (raw base-unit integer, e.g. "134176993")',
+    )
+  }
+  if (!opts.controller) {
+    throw new OpenTradeError(
+      'MISSING_INPUT',
+      'controller is required (address that receives the USDC settlement)',
+    )
+  }
+  if (!opts.owner) {
+    throw new OpenTradeError('MISSING_INPUT', 'owner is required (current holder of the shares)')
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(opts.controller)) {
+    throw new OpenTradeError(
+      'INVALID_INPUT',
+      `controller must be a 20-byte hex address; got "${opts.controller}"`,
+    )
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(opts.owner)) {
+    throw new OpenTradeError(
+      'INVALID_INPUT',
+      `owner must be a 20-byte hex address; got "${opts.owner}"`,
+    )
+  }
+  requireNetwork(opts.network)
+  const vaultAddr = resolveVaultAddress(opts.vault, opts.network)
+  const sharesStr = String(opts.shares)
+  const hexData = encodeRequestRedeem(sharesStr, opts.controller, opts.owner)
+
+  return {
+    intent: 'erc7540-request-redeem',
+    chain: opts.network,
+    chainId: CHAIN_IDS[opts.network],
+    to: vaultAddr,
+    value: '0',
+    data: { type: 'hex', hex_data: hexData },
+    selector: hexData.slice(0, 10),
+    vault: vaultAddr,
+    shares: sharesStr,
+    controller: opts.controller,
+    owner: opts.owner,
   }
 }
 
@@ -28645,11 +28710,9 @@ class OpenTradeClient {
     if (!eventId) throw new OpenTradeError('MISSING_INPUT', 'eventId is required')
     const vaultAddr = this.#resolveVault(vault)
 
-    return this.#call(
-      vaultAddr,
-      'function releaseWithdrawal(uint256 eventId) returns (uint256)',
-      [eventId],
-    )
+    return this.#call(vaultAddr, 'function releaseWithdrawal(uint256 eventId) returns (uint256)', [
+      eventId,
+    ])
   }
 
   /**
@@ -28722,11 +28785,9 @@ class OpenTradeClient {
     if (!user) throw new OpenTradeError('MISSING_INPUT', 'user address is required')
     const vaultAddr = this.#resolveVault(vault)
 
-    return this.#read(
-      vaultAddr,
-      'function maxDeposit(address receiver) view returns (uint256)',
-      [user],
-    )
+    return this.#read(vaultAddr, 'function maxDeposit(address receiver) view returns (uint256)', [
+      user,
+    ])
   }
 
   /**
@@ -28888,6 +28949,25 @@ const handlers = {
     core.setOutput('amount_formatted', result.amountFormatted)
     core.setOutput('vault', result.vault)
     core.setOutput('receiver', result.receiver)
+  },
+
+  'build-request-redeem': async () => {
+    const result = buildRequestRedeem({
+      vault: core.getInput('vault', { required: true }),
+      shares: core.getInput('shares', { required: true }),
+      controller: core.getInput('controller', { required: true }),
+      owner: core.getInput('owner', { required: true }),
+      network: core.getInput('network', { required: true }),
+    })
+    ;(0,dist.setJsonOutput)('result', result)
+    core.setOutput('to', result.to)
+    core.setOutput('chain', result.chain)
+    core.setOutput('chain_id', String(result.chainId))
+    core.setOutput('data_hex', result.data.hex_data)
+    core.setOutput('shares', result.shares)
+    core.setOutput('vault', result.vault)
+    core.setOutput('controller', result.controller)
+    core.setOutput('owner', result.owner)
   },
 
   // ── Write operations ────────────────────────────────────────

@@ -15,16 +15,15 @@ context: >
 commands:
   - name: build-approve
     description: >
-      Build an unsigned exact-amount ERC-20 approve intent for the
-      vault's underlying USDC. Returns the {chain, to, value, data}
-      payload an external signer (ForDefi, Safe, Fireblocks) consumes.
-      Pure: no chain call, no signer touched. Max-uint approvals not
-      supported.
+      Build an unsigned exact-amount ERC-20 approve intent for the vault's underlying USDC. Returns the {chain, to, value, data} payload an external signer (ForDefi, Safe, Fireblocks) consumes. Pure: no chain call, no signer touched. Max-uint approvals not supported.
+
+
     inputs:
       vault: { type: string, required: true, description: Vault address or symbol }
       amount: { type: string, required: true, description: 'Exact USDC amount, e.g. "40.00"' }
       network: { type: string, required: true, description: 'ethereum | avalanche | plume' }
-      spender: { type: string, required: false, description: Override the default spender (vault address) }
+      spender:
+        { type: string, required: false, description: Override the default spender (vault address) }
     outputs:
       result:
         type: object
@@ -32,32 +31,66 @@ commands:
 
   - name: build-deposit
     description: >
-      Build an unsigned ERC-4626 deposit intent against an OpenTrade
-      vault. Returns the {chain, to, value, data} payload an external
-      signer consumes. Caller must ensure an existing exact-amount
-      approve from `receiver` for `amount` on the underlying USDC.
+      Build an unsigned ERC-4626 deposit intent against an OpenTrade vault. Returns the {chain, to, value, data} payload an external signer consumes. Caller must ensure an existing exact-amount approve from `receiver` for `amount` on the underlying USDC.
+
+
     inputs:
       vault: { type: string, required: true, description: Vault address or symbol }
       amount: { type: string, required: true, description: 'USDC amount, e.g. "40.00"' }
-      receiver: { type: string, required: true, description: Address that will own the resulting vault shares }
+      receiver:
+        {
+          type: string,
+          required: true,
+          description: Address that will own the resulting vault shares,
+        }
       network: { type: string, required: true, description: 'ethereum | avalanche | plume' }
     outputs:
       result:
         type: object
         description: '{intent:"erc4626-deposit", chain, chainId, to, value, data:{type,hex_data}, selector, vault, underlying, amount, amountFormatted, receiver}'
 
+  - name: build-request-redeem
+    description: >
+      Build an unsigned ERC-7540 requestRedeem intent against an OpenTrade vault (v4 PoolFlex). Calling this on chain queues an off-chain settlement with OpenTrade; USDC is paid to `controller` at T+0 to T+2. There is no on-chain claim — once the request lands, the signer's job is done.
+
+
+    inputs:
+      vault: { type: string, required: true, description: Vault address or symbol }
+      shares:
+        {
+          type: string,
+          required: true,
+          description: 'Shares to redeem as a raw base-unit integer (e.g. "134176993" for 134.176993 shares at 6 decimals)',
+        }
+      controller:
+        { type: string, required: true, description: Address that will receive the USDC settlement }
+      owner:
+        {
+          type: string,
+          required: true,
+          description: Current holder of the shares (typically same as controller),
+        }
+      network: { type: string, required: true, description: 'ethereum | avalanche | plume' }
+    outputs:
+      result:
+        type: object
+        description: '{intent:"erc7540-request-redeem", chain, chainId, to, value, data:{type,hex_data}, selector, vault, shares, controller, owner}'
+
   - name: get-apy
     description: >
-      Fetch trailing-yield metrics from OpenTrade's API for a
-      PoolDynamic (v5) vault (XFTB, XMMF, XHYC, …). Returns the most
-      recent calculation's 1-day, 7-day, 30-day, and since-inception
-      annualized APYs (decimal form; multiply by 100 for percent).
-      Requires an OpenTrade API key — pass via api-key input.
+      Fetch trailing-yield metrics from OpenTrade's API for a PoolDynamic (v5) vault (XFTB, XMMF, XHYC, …). Returns the most recent calculation's 1-day, 7-day, 30-day, and since-inception annualized APYs (decimal form; multiply by 100 for percent). Requires an OpenTrade API key — pass via api-key input.
+
+
     inputs:
       vault: { type: string, required: true, description: Vault address or symbol }
       network: { type: string, required: true, description: 'ethereum | avalanche | plume' }
       api-key: { type: string, required: true, description: OpenTrade x-api-key header value }
-      api-base: { type: string, required: false, description: 'Override API base (sandbox: https://api.opentradesandbox.com)' }
+      api-base:
+        {
+          type: string,
+          required: false,
+          description: 'Override API base (sandbox: https://api.opentradesandbox.com)',
+        }
     outputs:
       result:
         type: object
@@ -136,7 +169,8 @@ commands:
     description: Release a settled withdrawal from a PoolFlex vault.
     inputs:
       vault: { type: string, required: true, description: Vault address or symbol }
-      event-id: { type: string, required: true, description: Withdrawal event ID from request-redeem }
+      event-id:
+        { type: string, required: true, description: Withdrawal event ID from request-redeem }
     outputs:
       result: { type: object, description: Transaction receipt }
 
@@ -199,11 +233,11 @@ commands:
 # w3-action-template/docs/display-schema.md for the canonical reference.
 display:
   brand:
-    name: "OpenTrade"
-    short_name: "OpenTrade"
-    description: "Institutional yield vaults · Treasury, MMF, corporate credit"
-    logo: "https://raw.githubusercontent.com/w3-io/w3-opentrade-action/main/assets/logo.svg"
-    color: "#2563EB"
+    name: 'OpenTrade'
+    short_name: 'OpenTrade'
+    description: 'Institutional yield vaults · Treasury, MMF, corporate credit'
+    logo: 'https://raw.githubusercontent.com/w3-io/w3-opentrade-action/main/assets/logo.svg'
+    color: '#2563EB'
 
   commands:
     # Intent-builder commands are pre-flight setup for a downstream
@@ -218,93 +252,105 @@ display:
     build-deposit:
       hide_from_view: true
 
+    build-request-redeem:
+      hide_from_view: true
+
     get-apy:
-      icon: "chart"
-      title_template: "Live yield · {{ inputs.vault | known_contract_short }}"
+      icon: 'chart'
+      title_template: 'Live yield · {{ inputs.vault | known_contract_short }}'
       summary:
-        - { label: "30-day APY", value: "{{ outputs.result.apy30d | format_pct_decimal }}" }
-        - { label: "7-day APY", value: "{{ outputs.result.apy7d | format_pct_decimal }}" }
-        - { label: "Since inception", value: "{{ outputs.result.apySinceInception | format_pct_decimal }}" }
-        - { label: "As of", value: "{{ outputs.result.date }}" }
-      chain_path: "inputs.network"
-      destination_brand_path: "inputs.vault"
+        - { label: '30-day APY', value: '{{ outputs.result.apy30d | format_pct_decimal }}' }
+        - { label: '7-day APY', value: '{{ outputs.result.apy7d | format_pct_decimal }}' }
+        - {
+            label: 'Since inception',
+            value: '{{ outputs.result.apySinceInception | format_pct_decimal }}',
+          }
+        - { label: 'As of', value: '{{ outputs.result.date }}' }
+      chain_path: 'inputs.network'
+      destination_brand_path: 'inputs.vault'
 
     deposit:
-      icon: "vault"
-      title_template: "Deposit to {{ inputs.vault | known_contract_short }}"
-      subtitle_template: "{{ inputs.amount | format_usdc_base }}"
+      icon: 'vault'
+      title_template: 'Deposit to {{ inputs.vault | known_contract_short }}'
+      subtitle_template: '{{ inputs.amount | format_usdc_base }}'
       summary:
-        - { label: "Amount", value: "{{ inputs.amount | format_usdc_base }}" }
-        - { label: "Tx", value: "{{ outputs.result.txHash | truncate_addr }}" }
-      chain_path: "inputs.network"
-      destination_brand_path: "inputs.vault"
-      tx_hash_path: "outputs.result.txHash"
+        - { label: 'Amount', value: '{{ inputs.amount | format_usdc_base }}' }
+        - { label: 'Tx', value: '{{ outputs.result.txHash | truncate_addr }}' }
+      chain_path: 'inputs.network'
+      destination_brand_path: 'inputs.vault'
+      tx_hash_path: 'outputs.result.txHash'
       chain_explorer:
-        ethereum: "https://etherscan.io/tx/{{tx_hash}}"
-        avalanche: "https://snowtrace.io/tx/{{tx_hash}}"
-        plume: "https://explorer.plume.org/tx/{{tx_hash}}"
+        ethereum: 'https://etherscan.io/tx/{{tx_hash}}'
+        avalanche: 'https://snowtrace.io/tx/{{tx_hash}}'
+        plume: 'https://explorer.plume.org/tx/{{tx_hash}}'
 
     request-redeem:
-      icon: "redeem"
-      title_template: "Redeem {{ inputs.vault | known_contract_short }}"
-      subtitle_template: "{{ inputs.shares }} shares"
+      icon: 'redeem'
+      title_template: 'Redeem {{ inputs.vault | known_contract_short }}'
+      subtitle_template: '{{ inputs.shares }} shares'
       summary:
-        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
-        - { label: "Shares", value: "{{ inputs.shares }}" }
-        - { label: "Tx", value: "{{ outputs.result.txHash | truncate_addr }}" }
-      tx_hash_path: "outputs.result.txHash"
+        - { label: 'Vault', value: '{{ inputs.vault | known_contract_brand }}' }
+        - { label: 'Shares', value: '{{ inputs.shares }}' }
+        - { label: 'Tx', value: '{{ outputs.result.txHash | truncate_addr }}' }
+      tx_hash_path: 'outputs.result.txHash'
 
     get-balance:
-      icon: "info"
-      title_template: "Position in {{ inputs.vault | known_contract_short }}"
-      subtitle_template: "{{ inputs.user | truncate_addr }}"
+      icon: 'info'
+      title_template: 'Position in {{ inputs.vault | known_contract_short }}'
+      subtitle_template: '{{ inputs.user | truncate_addr }}'
       summary:
-        - { label: "User", value: "{{ inputs.user | truncate_addr }}" }
-        - { label: "Shares", value: "{{ outputs.result }}" }
-      chain_path: "inputs.network"
-      destination_brand_path: "inputs.vault"
+        - { label: 'User', value: '{{ inputs.user | truncate_addr }}' }
+        - { label: 'Shares', value: '{{ outputs.result }}' }
+      chain_path: 'inputs.network'
+      destination_brand_path: 'inputs.vault'
 
     get-asset-balance:
-      icon: "info"
-      title_template: "USDC value in {{ inputs.vault | known_contract_short }}"
-      subtitle_template: "{{ inputs.user | truncate_addr }}"
+      icon: 'info'
+      title_template: 'USDC value in {{ inputs.vault | known_contract_short }}'
+      subtitle_template: '{{ inputs.user | truncate_addr }}'
       summary:
-        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
-        - { label: "Underlying", value: "{{ outputs.result | format_usdc_base }}" }
+        - { label: 'Vault', value: '{{ inputs.vault | known_contract_brand }}' }
+        - { label: 'Underlying', value: '{{ outputs.result | format_usdc_base }}' }
 
     get-exchange-rate:
-      icon: "chart"
-      title_template: "Exchange rate · {{ inputs.vault | known_contract_short }}"
-      subtitle_template: "shares → assets"
+      icon: 'chart'
+      title_template: 'Exchange rate · {{ inputs.vault | known_contract_short }}'
+      subtitle_template: 'shares → assets'
       summary:
-        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
-        - { label: "Rate", value: "{{ outputs.result | format_rate }}" }
+        - { label: 'Vault', value: '{{ inputs.vault | known_contract_brand }}' }
+        - { label: 'Rate', value: '{{ outputs.result | format_rate }}' }
 
     get-vault-info:
-      icon: "info"
-      title_template: "{{ inputs.vault | known_contract_short }} info"
+      icon: 'info'
+      title_template: '{{ inputs.vault | known_contract_short }} info'
       summary:
-        - { label: "Name", value: "{{ outputs.result.name }}" }
-        - { label: "Symbol", value: "{{ outputs.result.symbol }}" }
-        - { label: "State", value: "{{ outputs.result.state }}" }
-        - { label: "Exchange rate", value: "{{ outputs.result.exchangeRate | format_rate }}" }
-        - { label: "Total assets", value: "{{ outputs.result.totalAssets | format_usdc_base }}" }
+        - { label: 'Name', value: '{{ outputs.result.name }}' }
+        - { label: 'Symbol', value: '{{ outputs.result.symbol }}' }
+        - { label: 'State', value: '{{ outputs.result.state }}' }
+        - { label: 'Exchange rate', value: '{{ outputs.result.exchangeRate | format_rate }}' }
+        - { label: 'Total assets', value: '{{ outputs.result.totalAssets | format_usdc_base }}' }
 
     is-permitted:
-      icon: "check"
-      title_template: "KYC check · {{ inputs.vault | known_contract_short }}"
-      subtitle_template: "{{ inputs.user | truncate_addr }}"
+      icon: 'check'
+      title_template: 'KYC check · {{ inputs.vault | known_contract_short }}'
+      subtitle_template: '{{ inputs.user | truncate_addr }}'
       summary:
-        - { label: "Vault", value: "{{ inputs.vault | known_contract_brand }}" }
-        - { label: "Wallet", value: "{{ inputs.user | truncate_addr }}" }
-        - { label: "Permitted", value: "{{ outputs.result }}" }
+        - { label: 'Vault', value: '{{ inputs.vault | known_contract_brand }}' }
+        - { label: 'Wallet', value: '{{ inputs.user | truncate_addr }}' }
+        - { label: 'Permitted', value: '{{ outputs.result }}' }
 
     get-pool-overview:
-      icon: "chart"
-      title_template: "Pool overview · {{ inputs.vault | known_contract_short }}"
+      icon: 'chart'
+      title_template: 'Pool overview · {{ inputs.vault | known_contract_short }}'
       summary:
-        - { label: "Total assets", value: "{{ outputs.result.totalAssets | format_usdc_base }}" }
-        - { label: "Available", value: "{{ outputs.result.totalAvailableAssets | format_usdc_base }}" }
-        - { label: "Pending withdrawals", value: "{{ outputs.result.pendingWithdrawals | format_usdc_base }}" }
-      chain_path: "inputs.network"
-      destination_brand_path: "inputs.vault"
+        - { label: 'Total assets', value: '{{ outputs.result.totalAssets | format_usdc_base }}' }
+        - {
+            label: 'Available',
+            value: '{{ outputs.result.totalAvailableAssets | format_usdc_base }}',
+          }
+        - {
+            label: 'Pending withdrawals',
+            value: '{{ outputs.result.pendingWithdrawals | format_usdc_base }}',
+          }
+      chain_path: 'inputs.network'
+      destination_brand_path: 'inputs.vault'

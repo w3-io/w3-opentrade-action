@@ -16,14 +16,16 @@ const SELECTORS = {
   // ERC-4626 — OpenTrade vaults use the standard signature here.
   // PoolFlex and PoolDynamic both accept `deposit(assets, lender)`.
   deposit: '6e553f65', // deposit(uint256,address)
+  // ERC-7540 async redemption — the only redeem entrypoint exposed
+  // by OpenTrade v4 PoolFlex. Calling it queues an off-chain
+  // settlement; USDC is paid directly to `controller` at T+0 to T+2.
+  // There is no on-chain `withdraw`/`redeem` claim step.
+  requestRedeem: 'aa2f892d', // requestRedeem(uint256,address,address)
 }
 
 function pad32Hex(value) {
   if (typeof value !== 'string') {
-    throw new W3ActionError(
-      'INVALID_INPUT',
-      `pad32Hex requires hex string; got ${typeof value}`,
-    )
+    throw new W3ActionError('INVALID_INPUT', `pad32Hex requires hex string; got ${typeof value}`)
   }
   return value.toLowerCase().replace(/^0x/, '').padStart(64, '0')
 }
@@ -33,10 +35,7 @@ function pad32BigInt(value) {
   try {
     bi = BigInt(value)
   } catch {
-    throw new W3ActionError(
-      'INVALID_INPUT',
-      `pad32BigInt: cannot convert "${value}" to BigInt`,
-    )
+    throw new W3ActionError('INVALID_INPUT', `pad32BigInt: cannot convert "${value}" to BigInt`)
   }
   if (bi < 0n) {
     throw new W3ActionError(
@@ -55,6 +54,17 @@ export function encodeApprove(spender, amount) {
 /** Encode ERC-4626 `deposit(assets, receiver)` — OpenTrade vault entry. */
 export function encodeOpenTradeDeposit(amount, receiver) {
   return '0x' + SELECTORS.deposit + pad32BigInt(amount) + pad32Hex(receiver)
+}
+
+/**
+ * Encode ERC-7540 `requestRedeem(shares, controller, owner)`. Queues
+ * an OpenTrade off-chain settlement; USDC is paid to `controller` at
+ * T+0 to T+2 with no on-chain claim step.
+ */
+export function encodeRequestRedeem(shares, controller, owner) {
+  return (
+    '0x' + SELECTORS.requestRedeem + pad32BigInt(shares) + pad32Hex(controller) + pad32Hex(owner)
+  )
 }
 
 /** Convert USDC amount string ("40.00") to base units string ("40000000"). */

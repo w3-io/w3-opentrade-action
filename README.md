@@ -46,27 +46,16 @@ Write operations (deposit, request-redeem) require a KYC'd, whitelisted wallet. 
 
 ## Authentication
 
-This action is **self-custody** — there are no API keys. Read
-operations need no credentials; write operations are signed by the
-W3 bridge using its configured signer.
+This action is **self-custody** — there are no API keys. Read operations need no credentials; write operations are signed by the W3 bridge using its configured signer.
 
-| Operation | Needs                                                                                                                                |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Reads     | Nothing. `get-exchange-rate`, `get-vault-info`, `get-pool-overview`, `get-balance`, `is-permitted`, etc. just work.                  |
-| Writes    | A funded, KYC-whitelisted signer key configured on the bridge (typically via `W3_BRIDGE_SIGNER_ETHEREUM`). The key never enters the action container. |
+| Operation | Needs |
+| --- | --- |
+| Reads | Nothing. `get-exchange-rate`, `get-vault-info`, `get-pool-overview`, `get-balance`, `is-permitted`, etc. just work. |
+| Writes | A funded, KYC-whitelisted signer key configured on the bridge (typically via `W3_BRIDGE_SIGNER_ETHEREUM`). The key never enters the action container. |
 
-All on-chain operations go through `bridge.chain()` from
-`@w3-io/action-core`. The bridge exposes the signer's address as the
-`from` field on the write operation's result, so workflows can chain
-`${{ steps.deposit.outputs.result.from }}` into subsequent steps
-without ever handling the private key.
+All on-chain operations go through `bridge.chain()` from `@w3-io/action-core`. The bridge exposes the signer's address as the `from` field on the write operation's result, so workflows can chain `${{ steps.deposit.outputs.result.from }}` into subsequent steps without ever handling the private key.
 
-For local development, start a standalone bridge with `w3 bridge
-serve --signer-ethereum $W3_SECRET_ETHEREUM --allow '*' --port 8232`
-and point actions at it via
-`W3_BRIDGE_URL=http://host.docker.internal:8232`. Set the network
-RPC via `W3_CHAIN_RPC_AVALANCHE`, `W3_CHAIN_RPC_ETHEREUM`, or
-`W3_CHAIN_RPC_PLUME` on the bridge process.
+For local development, start a standalone bridge with `w3 bridge serve --signer-ethereum $W3_SECRET_ETHEREUM --allow '*' --port 8232` and point actions at it via `W3_BRIDGE_URL=http://host.docker.internal:8232`. Set the network RPC via `W3_CHAIN_RPC_AVALANCHE`, `W3_CHAIN_RPC_ETHEREUM`, or `W3_CHAIN_RPC_PLUME` on the bridge process.
 
 ## Development
 

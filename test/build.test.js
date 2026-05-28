@@ -13,11 +13,7 @@ import {
   resolveVaultAddress,
   OpenTradeError,
 } from '../src/opentrade.js'
-import {
-  encodeApprove,
-  encodeOpenTradeDeposit,
-  parseUsdcAmount,
-} from '../src/encode.js'
+import { encodeApprove, encodeOpenTradeDeposit, parseUsdcAmount } from '../src/encode.js'
 
 const XFTB = '0x061329361E0f163125225bf71a1E5AF954b46869'
 const XTBT = '0xad6605F4987031fd2d6d6816bE53Eb7C5b764bf7'
@@ -74,10 +70,7 @@ describe('encodeOpenTradeDeposit', () => {
     const argAmount = hex.slice(10, 10 + 64)
     const argReceiver = hex.slice(10 + 64)
     assert.equal(BigInt('0x' + argAmount), 40000000n)
-    assert.equal(
-      argReceiver.toLowerCase(),
-      '0'.repeat(24) + RECEIVER.toLowerCase().slice(2),
-    )
+    assert.equal(argReceiver.toLowerCase(), '0'.repeat(24) + RECEIVER.toLowerCase().slice(2))
   })
 })
 
@@ -131,10 +124,7 @@ describe('buildApprove', () => {
   })
 
   it('rejects missing amount', () => {
-    assert.throws(
-      () => buildApprove({ vault: 'XFTB', network: 'avalanche' }),
-      /amount is required/,
-    )
+    assert.throws(() => buildApprove({ vault: 'XFTB', network: 'avalanche' }), /amount is required/)
   })
 
   it('rejects unsupported network', () => {
@@ -181,8 +171,7 @@ describe('buildDeposit', () => {
 
   it('rejects missing receiver', () => {
     assert.throws(
-      () =>
-        buildDeposit({ vault: 'XFTB', amount: '40', network: 'avalanche' }),
+      () => buildDeposit({ vault: 'XFTB', amount: '40', network: 'avalanche' }),
       /receiver is required/,
     )
   })

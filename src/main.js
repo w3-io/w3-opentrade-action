@@ -1,6 +1,13 @@
 import * as core from '@actions/core'
 import { createCommandRouter, setJsonOutput, handleError } from '@w3-io/action-core'
-import { OpenTradeClient, OpenTradeError, buildApprove, buildDeposit, getApy } from './opentrade.js'
+import {
+  OpenTradeClient,
+  OpenTradeError,
+  buildApprove,
+  buildDeposit,
+  buildRequestRedeem,
+  getApy,
+} from './opentrade.js'
 
 /**
  * W3 OpenTrade Action — command dispatch.
@@ -109,6 +116,25 @@ const handlers = {
     core.setOutput('amount_formatted', result.amountFormatted)
     core.setOutput('vault', result.vault)
     core.setOutput('receiver', result.receiver)
+  },
+
+  'build-request-redeem': async () => {
+    const result = buildRequestRedeem({
+      vault: core.getInput('vault', { required: true }),
+      shares: core.getInput('shares', { required: true }),
+      controller: core.getInput('controller', { required: true }),
+      owner: core.getInput('owner', { required: true }),
+      network: core.getInput('network', { required: true }),
+    })
+    setJsonOutput('result', result)
+    core.setOutput('to', result.to)
+    core.setOutput('chain', result.chain)
+    core.setOutput('chain_id', String(result.chainId))
+    core.setOutput('data_hex', result.data.hex_data)
+    core.setOutput('shares', result.shares)
+    core.setOutput('vault', result.vault)
+    core.setOutput('controller', result.controller)
+    core.setOutput('owner', result.owner)
   },
 
   // ── Write operations ────────────────────────────────────────

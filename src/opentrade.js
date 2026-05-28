@@ -19,7 +19,12 @@
  */
 
 import { W3ActionError } from '@w3-io/action-core'
-import { encodeApprove, encodeOpenTradeDeposit, parseUsdcAmount } from './encode.js'
+import {
+  encodeApprove,
+  encodeOpenTradeDeposit,
+  encodeRequestRedeem,
+  parseUsdcAmount,
+} from './encode.js'
 
 export class OpenTradeError extends W3ActionError {
   constructor(code, message, { details } = {}) {
@@ -157,21 +162,16 @@ export async function getApy({ vault, network, apiKey, apiBase } = {}) {
   }
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new OpenTradeError(
-      'HTTP_ERROR',
-      `OpenTrade API ${res.status}: ${body.slice(0, 240)}`,
-      { details: { status: res.status, url } },
-    )
+    throw new OpenTradeError('HTTP_ERROR', `OpenTrade API ${res.status}: ${body.slice(0, 240)}`, {
+      details: { status: res.status, url },
+    })
   }
   const json = await res.json()
   const rows = Array.isArray(json?.yieldMetrics) ? json.yieldMetrics : []
   // Latest row = most recent calculation. The API returns oldest-first
   // by default but we ask for no date range, so it returns the latest
   // single day. Defensive: take the row with the largest dayNumber.
-  const latest = rows.reduce(
-    (acc, row) => (acc && acc.dayNumber > row.dayNumber ? acc : row),
-    null,
-  )
+  const latest = rows.reduce((acc, row) => (acc && acc.dayNumber > row.dayNumber ? acc : row), null)
   if (!latest) {
     throw new OpenTradeError(
       'NO_DATA',
@@ -294,6 +294,66 @@ export function buildDeposit(opts) {
     amount: amountRaw,
     amountFormatted: opts.amount,
     receiver: opts.receiver,
+  }
+}
+
+/**
+ * Build an unsigned ERC-7540 `requestRedeem(shares, controller, owner)`
+ * transaction intent. Calling this on the chain queues an off-chain
+ * settlement with OpenTrade; USDC is paid directly to `controller`
+ * at T+0 to T+2. There is no on-chain claim — once the request lands,
+ * the signer's job is done.
+ *
+ * shares is supplied in the share token's native base units (typically
+ * 6-decimal for USDC-pegged vaults). Use the live `balanceOf(holder)`
+ * read on the vault to get the exact integer; passing a float-shaped
+ * amount string is NOT supported here.
+ */
+export function buildRequestRedeem(opts) {
+  if (!opts || opts.shares === undefined || opts.shares === null) {
+    throw new OpenTradeError(
+      'MISSING_INPUT',
+      'shares is required (raw base-unit integer, e.g. "134176993")',
+    )
+  }
+  if (!opts.controller) {
+    throw new OpenTradeError(
+      'MISSING_INPUT',
+      'controller is required (address that receives the USDC settlement)',
+    )
+  }
+  if (!opts.owner) {
+    throw new OpenTradeError('MISSING_INPUT', 'owner is required (current holder of the shares)')
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(opts.controller)) {
+    throw new OpenTradeError(
+      'INVALID_INPUT',
+      `controller must be a 20-byte hex address; got "${opts.controller}"`,
+    )
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/.test(opts.owner)) {
+    throw new OpenTradeError(
+      'INVALID_INPUT',
+      `owner must be a 20-byte hex address; got "${opts.owner}"`,
+    )
+  }
+  requireNetwork(opts.network)
+  const vaultAddr = resolveVaultAddress(opts.vault, opts.network)
+  const sharesStr = String(opts.shares)
+  const hexData = encodeRequestRedeem(sharesStr, opts.controller, opts.owner)
+
+  return {
+    intent: 'erc7540-request-redeem',
+    chain: opts.network,
+    chainId: CHAIN_IDS[opts.network],
+    to: vaultAddr,
+    value: '0',
+    data: { type: 'hex', hex_data: hexData },
+    selector: hexData.slice(0, 10),
+    vault: vaultAddr,
+    shares: sharesStr,
+    controller: opts.controller,
+    owner: opts.owner,
   }
 }
 
@@ -534,11 +594,9 @@ export class OpenTradeClient {
     if (!eventId) throw new OpenTradeError('MISSING_INPUT', 'eventId is required')
     const vaultAddr = this.#resolveVault(vault)
 
-    return this.#call(
-      vaultAddr,
-      'function releaseWithdrawal(uint256 eventId) returns (uint256)',
-      [eventId],
-    )
+    return this.#call(vaultAddr, 'function releaseWithdrawal(uint256 eventId) returns (uint256)', [
+      eventId,
+    ])
   }
 
   /**
@@ -611,11 +669,9 @@ export class OpenTradeClient {
     if (!user) throw new OpenTradeError('MISSING_INPUT', 'user address is required')
     const vaultAddr = this.#resolveVault(vault)
 
-    return this.#read(
-      vaultAddr,
-      'function maxDeposit(address receiver) view returns (uint256)',
-      [user],
-    )
+    return this.#read(vaultAddr, 'function maxDeposit(address receiver) view returns (uint256)', [
+      user,
+    ])
   }
 
   /**
